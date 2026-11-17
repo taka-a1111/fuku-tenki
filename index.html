@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<!-- BUILD_TAG: 2026-11-17a -->
+<!-- BUILD_TAG: 2026-11-17b -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ふくてんき｜気温から服装がひと目でわかる</title>
@@ -53,6 +53,7 @@ header.top{display:flex;align-items:center;justify-content:space-between;gap:10p
 .chip .x{border:0;background:none;color:var(--sub);padding:0 4px;font-size:14px}
 .msg{font-size:13px;color:var(--sub);margin-top:8px}
 .msg.err{color:#b42318}
+.msg .retry{margin-left:8px;border:1px solid #b42318;background:#fff;color:#b42318;border-radius:8px;padding:2px 10px;font-size:13px}
 
 .days{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 8px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
 .day{flex:0 0 auto;scroll-snap-align:start;width:74px;border:1px solid var(--line);background:#fff;border-radius:14px;padding:8px 4px;text-align:center}
@@ -198,7 +199,7 @@ footer a{color:var(--sub)}
   <footer>
     気象データ：<a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>
     ／ 地図・地名：<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a><br>
-    <span id="buildTag">BUILD_TAG 2026-11-17a</span>
+    <span id="buildTag">BUILD_TAG 2026-11-17b</span>
   </footer>
 </div>
 
@@ -219,7 +220,7 @@ footer a{color:var(--sub)}
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script>
-const BUILD_TAG = "2026-11-17a";
+const BUILD_TAG = "2026-11-17b";
 console.log("BUILD_TAG: " + BUILD_TAG);
 
 const DAYS = 15; // 今日＋14日（2週間先まで）
@@ -297,14 +298,27 @@ function levelOf(t){
 }
 
 /* ---------- 場所・通信 ---------- */
-function setMsg(t, err){ const m=$("msg"); m.textContent=t||""; m.className="msg"+(err?" err":""); }
+// 外部APIへ直接取りに行き、つながらなければ自前の中継API（/api/proxy）で取り直す
+function fetchT(u, ms){ const c = new AbortController(); const t = setTimeout(()=>c.abort(), ms); return fetch(u, {signal:c.signal}).finally(()=>clearTimeout(t)); }
+async function getJSON(direct, proxyQuery){
+  try{
+    const r = await fetchT(direct, 8000);
+    if(r.ok) return await r.json();
+  }catch(e){}
+  const r2 = await fetchT("/api/proxy?"+proxyQuery, 15000);
+  if(!r2.ok) throw new Error("HTTP "+r2.status);
+  return await r2.json();
+}
+function setMsg(t, err, retry){
+  const m=$("msg"); m.textContent=t||""; m.className="msg"+(err?" err":"");
+  if(retry){ const b=document.createElement("button"); b.className="retry"; b.textContent="もう一度読み込む"; b.onclick=retry; m.append(b); }
+}
 function loading(on){ $("loading").classList.toggle("show", !!on); }
 
 async function reverseName(lat, lon){
   try{
     const u = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=14&accept-language=ja`;
-    const r = await fetch(u); if(!r.ok) throw 0;
-    const j = await r.json(); const a = j.address || {};
+    const j = await getJSON(u, `kind=reverse&lat=${lat}&lon=${lon}`); const a = j.address || {};
     const city = a.city || a.town || a.village || a.county || a.state || "";
     const sub = a.suburb || a.quarter || a.neighbourhood || a.city_district || "";
     const n = [city, sub].filter(Boolean).join(" ");
@@ -317,22 +331,16 @@ async function searchPlaces(q){
   const out = [];
   try{
     const u = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&accept-language=ja&limit=8`;
-    const r = await fetch(u);
-    if(r.ok){
-      const j = await r.json();
-      j.forEach(p => out.push({lat:+p.lat, lon:+p.lon, name:(p.name || p.display_name.split(",")[0]).trim(),
-        desc:p.display_name.split(",").slice(1,4).map(s=>s.trim()).reverse().join(" ")}));
-    }
+    const j = await getJSON(u, "kind=search&q="+encodeURIComponent(q));
+    (Array.isArray(j)?j:[]).forEach(p => out.push({lat:+p.lat, lon:+p.lon, name:(p.name || p.display_name.split(",")[0]).trim(),
+      desc:p.display_name.split(",").slice(1,4).map(s=>s.trim()).reverse().join(" ")}));
   }catch(e){}
   if(!out.length){
     try{
       const u = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=8&language=ja&format=json`;
-      const r = await fetch(u);
-      if(r.ok){
-        const j = await r.json();
-        (j.results||[]).forEach(p => out.push({lat:p.latitude, lon:p.longitude, name:p.name,
-          desc:[p.country, p.admin1, p.admin2].filter(Boolean).join(" ")}));
-      }
+      const j = await getJSON(u, "kind=geocode&q="+encodeURIComponent(q));
+      (j.results||[]).forEach(p => out.push({lat:p.latitude, lon:p.longitude, name:p.name,
+        desc:[p.country, p.admin1, p.admin2].filter(Boolean).join(" ")}));
     }catch(e){}
   }
   return out;
@@ -346,9 +354,8 @@ async function fetchWeather(lat, lon){
   const daily = "weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,precipitation_probability_max,precipitation_sum,snowfall_sum,uv_index_max,wind_speed_10m_max";
   const hourly = "temperature_2m,apparent_temperature,weather_code,precipitation_probability";
   const u = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=${daily}&hourly=${hourly}&timezone=auto&forecast_days=${DAYS}&wind_speed_unit=ms`;
-  const r = await fetch(u);
-  if(!r.ok) throw new Error("天気の取得に失敗しました（"+r.status+"）");
-  const d = await r.json();
+  const d = await getJSON(u, `kind=weather&lat=${lat}&lon=${lon}`);
+  if(!d || !d.daily) throw new Error("no data");
   cache.set(key, {t:Date.now(), d});
   return d;
 }
@@ -364,7 +371,7 @@ async function setLocation(loc, opts={}){
     renderDays(); renderDay();
     $("main").hidden = false;
   }catch(e){
-    setMsg(e.message || "天気を取得できませんでした。通信状況を確認してください。", true);
+    setMsg("天気を取得できませんでした。電波の良い場所で、もう一度お試しください。", true, ()=>setLocation(state.loc, {keepDay:true}));
   }finally{ loading(false); }
 }
 
