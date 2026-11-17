@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<!-- BUILD_TAG: 2026-11-17a -->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ふくてんき｜気温から服装がひと目でわかる</title>
+<meta name="description" content="現在地・地図のピン・キーワード検索で場所を選び、今日から2週間先までの気温に合わせた服装をイラストで表示します。">
+<meta name="theme-color" content="#2f6fb5">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<style>
+:root{
+  --bg:#f3f6fa; --card:#fff; --ink:#1f2a37; --sub:#5b6b7d; --line:#e2e8f0;
+  --brand:#2f6fb5; --brand2:#e9f1fb; --hot:#e8553f; --cold:#2f6fb5;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  font-family:"Hiragino Sans","游ゴシック体","Yu Gothic","游ゴシック","メイリオ","Meiryo","Noto Sans JP","Noto Sans CJK JP",sans-serif;
+  background:var(--bg); color:var(--ink); line-height:1.6; -webkit-text-size-adjust:100%;
+}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+.wrap{max-width:960px;margin:0 auto;padding:12px 14px 40px}
+header.top{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 2px 10px}
+.logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:20px;letter-spacing:.02em}
+.logo svg{width:30px;height:30px}
+.sens{display:flex;background:#fff;border:1px solid var(--line);border-radius:999px;padding:3px}
+.sens button{border:0;background:transparent;padding:5px 10px;border-radius:999px;font-size:12px;color:var(--sub);white-space:nowrap}
+.sens button.on{background:var(--brand);color:#fff}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px}
+.locrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.locname{flex:1 1 auto;min-width:0;font-weight:700;font-size:18px;display:flex;align-items:center;gap:6px}
+.locname span.t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.favbtn{border:0;background:none;font-size:20px;line-height:1;padding:2px 4px;color:#c9a227}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 12px;font-size:14px;display:inline-flex;align-items:center;gap:6px}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn:active{transform:translateY(1px)}
+.search{display:flex;gap:8px;margin-top:10px;position:relative}
+.search input{flex:1;min-width:0;border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:16px;background:#fbfcfe}
+.results{list-style:none;margin:8px 0 0;padding:0;border:1px solid var(--line);border-radius:12px;overflow:hidden;display:none}
+.results.show{display:block}
+.results li button{display:block;width:100%;text-align:left;border:0;background:#fff;padding:10px 12px;border-top:1px solid var(--line)}
+.results li:first-child button{border-top:0}
+.results li button:hover{background:var(--brand2)}
+.results .n{font-weight:700;display:block}
+.results .d{font-size:12px;color:var(--sub);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.favs{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.favs:empty{display:none}
+.chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);background:#fbfcfe;border-radius:999px;padding:4px 6px 4px 10px;font-size:13px}
+.chip .x{border:0;background:none;color:var(--sub);padding:0 4px;font-size:14px}
+.msg{font-size:13px;color:var(--sub);margin-top:8px}
+.msg.err{color:#b42318}
+
+.days{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 8px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
+.day{flex:0 0 auto;scroll-snap-align:start;width:74px;border:1px solid var(--line);background:#fff;border-radius:14px;padding:8px 4px;text-align:center}
+.day.on{border-color:var(--brand);background:var(--brand2);box-shadow:0 0 0 2px var(--brand) inset}
+.day .w{font-size:12px;color:var(--sub);display:block}
+.day .w.sat{color:#2563eb}.day .w.sun{color:#dc2626}
+.day .i{font-size:24px;display:block;line-height:1.3}
+.day .tt{font-size:12px;display:block;white-space:nowrap}
+.day .tt .mx{color:var(--hot);font-weight:700}.day .tt .mn{color:var(--cold)}
+.day .r{font-size:11px;color:#2b6cb0;display:block}
+.note{font-size:12px;color:var(--sub);margin:-2px 2px 10px}
+
+.look{display:grid;grid-template-columns:44% 1fr;gap:12px;align-items:start}
+@media(min-width:780px){.look{grid-template-columns:300px 1fr;gap:18px}}
+.lookR{min-width:0}
+.dline{font-size:13px;color:var(--sub);margin-bottom:6px}
+.figure{border-radius:14px;overflow:hidden;border:1px solid var(--line);background:#fff;position:relative}
+.figure svg{display:block;width:100%;height:auto}
+.head1{display:flex;align-items:center;gap:12px}
+.head1 .big{font-size:48px;line-height:1}
+.head1 .lbl{font-size:13px;color:var(--sub)}
+.head1 .wx{font-weight:700;font-size:18px}
+.temps{display:flex;align-items:baseline;gap:10px;margin-top:6px;flex-wrap:wrap}
+.temps .mx{font-size:34px;font-weight:700;color:var(--hot)}
+.temps .mn{font-size:22px;font-weight:700;color:var(--cold)}
+.temps .feel{font-size:13px;color:var(--sub)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.stat{background:#f7f9fc;border-radius:10px;padding:8px;text-align:center}
+.stat .k{font-size:11px;color:var(--sub);display:block}
+.stat .v{font-weight:700;font-size:15px}
+.tod{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+.tod div{background:#f7f9fc;border-radius:10px;padding:6px;text-align:center;font-size:13px}
+.tod b{font-size:16px}
+.verdict{border-radius:12px;padding:10px 12px;color:#fff}
+.verdict .t{font-size:18px;font-weight:700;line-height:1.35}
+.verdict .s{font-size:12px;opacity:.95;margin-top:2px}
+@media(min-width:780px){.verdict{padding:14px 16px}.verdict .t{font-size:24px}.verdict .s{font-size:14px}}
+.gauge{display:flex;gap:3px;margin-top:10px}
+.gauge i{flex:1;height:8px;border-radius:4px;opacity:.28}
+.gauge i.on{opacity:1;height:12px;margin-top:-2px}
+.gauge-lbl{display:flex;justify-content:space-between;font-size:11px;color:var(--sub);margin-top:3px}
+h3{font-size:14px;margin:12px 0 6px}
+.items{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px}
+@media(min-width:780px){.items{grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}.item .e{font-size:32px}.item .n{font-size:13px}}
+.item{background:#f7f9fc;border:1px solid var(--line);border-radius:10px;padding:6px 3px;text-align:center}
+.item .e{font-size:26px;display:block;line-height:1.2}
+.item .n{font-size:11px;display:block;line-height:1.3;word-break:keep-all;overflow-wrap:anywhere}
+.item.carry{background:#fff8e6;border-color:#f3d48a}
+.item.carry .n:after{content:"持参";display:block;font-size:10px;color:#a46b00}
+.tips{margin:0;padding-left:1.2em;font-size:14px}
+.tips li{margin:3px 0}
+footer{text-align:center;font-size:11px;color:var(--sub);margin-top:16px}
+footer a{color:var(--sub)}
+
+.loading{position:fixed;inset:0;background:rgba(243,246,250,.6);display:none;align-items:center;justify-content:center;z-index:2000}
+.loading.show{display:flex}
+.spin{width:38px;height:38px;border:4px solid #cfe0f5;border-top-color:var(--brand);border-radius:50%;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+.modal{position:fixed;inset:0;background:#fff;z-index:1500;display:none;flex-direction:column}
+.modal.show{display:flex}
+.mhead{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--line);gap:8px}
+.mhead .ttl{font-weight:700}
+#map{flex:1;min-height:200px}
+.mfoot{padding:10px 12px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.mfoot .pinname{flex:1 1 100%;font-size:14px}
+.mfoot .btn{flex:1}
+@media(min-width:780px){
+  .modal{inset:5vh 8vw;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.25);overflow:hidden}
+  .mfoot .pinname{flex:1 1 auto}
+  .mfoot .btn{flex:0 0 auto}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="logo" aria-label="ふくてんき">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="11" cy="11" r="6" fill="#f6b73c"/><path d="M9 14h14l4 5-4 2v9H9v-9l-4-2z" fill="#2f6fb5"/><path d="M13 14q3 3 6 0" fill="none" stroke="#fff" stroke-width="1.6"/></svg>
+      ふくてんき
+    </div>
+    <div class="sens" role="group" aria-label="体質">
+      <button data-s="-3">寒がり</button><button data-s="0" class="on">ふつう</button><button data-s="3">暑がり</button>
+    </div>
+  </header>
+
+  <section class="card" aria-label="場所">
+    <div class="locrow">
+      <div class="locname"><span>📍</span><span class="t" id="locName">場所を取得中…</span>
+        <button class="favbtn" id="favBtn" title="この場所を保存" aria-label="この場所を保存">☆</button></div>
+      <div class="btns">
+        <button class="btn" id="geoBtn">🎯 現在地</button>
+        <button class="btn" id="mapBtn">🗺️ 地図で選ぶ</button>
+      </div>
+    </div>
+    <form class="search" id="searchForm" autocomplete="off">
+      <input id="q" type="search" placeholder="地名・駅・施設名で検索" enterkeyhint="search">
+      <button class="btn primary" type="submit">検索</button>
+    </form>
+    <ul class="results" id="results"></ul>
+    <div class="favs" id="favs"></div>
+    <div class="msg" id="msg"></div>
+  </section>
+
+  <div class="days" id="days" role="tablist" aria-label="日付"></div>
+  <div class="note" id="dayNote"></div>
+
+  <div id="main" hidden>
+    <section class="card look">
+      <div class="figure" id="figure"></div>
+      <div class="lookR">
+        <div class="dline" id="dline"></div>
+        <div class="verdict" id="verdict"><div class="t" id="vT"></div><div class="s" id="vS"></div></div>
+        <div class="gauge" id="gauge"></div>
+        <div class="gauge-lbl"><span>暑い</span><span>寒い</span></div>
+        <h3 id="itemsTtl">今日のコーデ</h3>
+        <div class="items" id="items"></div>
+      </div>
+    </section>
+    <section class="card">
+      <div class="head1">
+        <div class="big" id="wxIcon">☀️</div>
+        <div>
+          <div class="lbl" id="dateLbl"></div>
+          <div class="wx" id="wxLbl"></div>
+        </div>
+      </div>
+      <div class="temps">
+        <span class="mx" id="tmax"></span><span class="mn" id="tmin"></span>
+        <span class="feel" id="feel"></span>
+      </div>
+      <div class="stats">
+        <div class="stat"><span class="k">降水確率</span><span class="v" id="pp"></span></div>
+        <div class="stat"><span class="k">風速（最大）</span><span class="v" id="wind"></span></div>
+        <div class="stat"><span class="k">紫外線</span><span class="v" id="uv"></span></div>
+      </div>
+      <div class="tod" id="tod"></div>
+      <h3>ひとことアドバイス</h3>
+      <ul class="tips" id="tips"></ul>
+    </section>
+  </div>
+
+  <footer>
+    気象データ：<a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>
+    ／ 地図・地名：<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a><br>
+    <span id="buildTag">BUILD_TAG 2026-11-17a</span>
+  </footer>
+</div>
+
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-label="地図で場所を選ぶ">
+  <div class="mhead">
+    <span class="ttl">地図をタップしてピンを置く</span>
+    <button class="btn" id="mClose">閉じる</button>
+  </div>
+  <div id="map"></div>
+  <div class="mfoot">
+    <div class="pinname" id="pinName">ピンをドラッグして動かすこともできます</div>
+    <button class="btn" id="mGeo">🎯 現在地へ</button>
+    <button class="btn primary" id="mOk">この場所の服装を見る</button>
+  </div>
+</div>
+
+<div class="loading" id="loading"><div class="spin"></div></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+const BUILD_TAG = "2026-11-17a";
+console.log("BUILD_TAG: " + BUILD_TAG);
+
+const DAYS = 15; // 今日＋14日（2週間先まで）
+const DEFAULT_LOC = {lat:35.1709, lon:136.8815, name:"名古屋駅"};
+const LS_KEY = "fukutenki.v1";
+const $ = id => document.getElementById(id);
+
+const state = {loc:null, sens:0, dayIdx:0, data:null, favs:[]};
+
+/* ---------- 保存 ---------- */
+function loadLS(){
+  try{
+    const s = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+    if(s.loc && isFinite(s.loc.lat)) state.loc = s.loc;
+    if(typeof s.sens === "number") state.sens = s.sens;
+    if(Array.isArray(s.favs)) state.favs = s.favs.slice(0,12);
+  }catch(e){}
+}
+function saveLS(){
+  try{ localStorage.setItem(LS_KEY, JSON.stringify({loc:state.loc, sens:state.sens, favs:state.favs})); }catch(e){}
+}
+
+/* ---------- 天気コード ---------- */
+function wx(code){
+  const c = Number(code);
+  if(c===0) return {i:"☀️", l:"快晴", k:"sun"};
+  if(c===1) return {i:"🌤️", l:"晴れ", k:"sun"};
+  if(c===2) return {i:"⛅", l:"晴れ時々くもり", k:"partly"};
+  if(c===3) return {i:"☁️", l:"くもり", k:"cloud"};
+  if(c===45||c===48) return {i:"🌫️", l:"霧", k:"cloud"};
+  if(c>=51&&c<=57) return {i:"🌦️", l:"霧雨", k:"rain"};
+  if(c===61||c===80) return {i:"🌦️", l:"小雨", k:"rain"};
+  if(c===63||c===81) return {i:"🌧️", l:"雨", k:"rain"};
+  if(c===65||c===82) return {i:"🌧️", l:"強い雨", k:"rain"};
+  if(c===66||c===67) return {i:"🌧️", l:"冷たい雨", k:"rain"};
+  if(c>=71&&c<=77) return {i:"🌨️", l:"雪", k:"snow"};
+  if(c===85||c===86) return {i:"🌨️", l:"にわか雪", k:"snow"};
+  if(c>=95) return {i:"⛈️", l:"雷雨", k:"rain"};
+  return {i:"🌡️", l:"—", k:"cloud"};
+}
+
+/* ---------- 服装レベル ---------- */
+const LV = [null,
+ {t:"真夏の服装", s:"半袖＋短めのボトムで涼しく", col:"#e8553f",
+  top:"tee", topC:"#4fb3bf", sleeve:"short", bottom:"shorts", botC:"#3d5a80", shoes:"sandal", hat:"straw",
+  items:[["👕","半袖Tシャツ"],["🩳","ハーフパンツ"],["🩴","サンダル"],["👒","帽子"]]},
+ {t:"半袖でOK", s:"日中は半袖1枚でちょうどいい", col:"#f08a3c",
+  top:"tee", topC:"#f2a541", sleeve:"short", bottom:"long", botC:"#d9c7a3", shoes:"sneaker",
+  items:[["👕","半袖シャツ"],["👖","薄手のパンツ"],["👟","スニーカー"]]},
+ {t:"長袖1枚", s:"長袖シャツやカットソーが快適", col:"#e0b341",
+  top:"shirt", topC:"#7fa7d9", sleeve:"long", bottom:"long", botC:"#34507a", shoes:"sneaker",
+  items:[["👔","長袖シャツ"],["👖","長ズボン"],["👟","スニーカー"]]},
+ {t:"羽織りがあると安心", s:"カーディガンや薄手のジャケットを", col:"#8bbf5a",
+  top:"shirt", topC:"#e9eef5", sleeve:"long", bottom:"long", botC:"#34507a", shoes:"sneaker", outer:"cardigan", outC:"#c9a27e",
+  items:[["👔","長袖シャツ"],["🧥","カーディガン"],["👖","長ズボン"],["👟","スニーカー"]]},
+ {t:"ジャケットを着て", s:"ニット＋ジャケットやトレンチで", col:"#4fb3a5",
+  top:"knit", topC:"#8e6c8a", sleeve:"long", bottom:"long", botC:"#3a3f4b", shoes:"sneaker", outer:"jacket", outC:"#6b7b5e",
+  items:[["🧶","ニット"],["🧥","ジャケット・トレンチ"],["👖","長ズボン"],["👞","革靴・スニーカー"]]},
+ {t:"コートの出番", s:"ウールのコートを着て出かけよう", col:"#4f8fd0",
+  top:"knit", topC:"#d8c3a5", sleeve:"long", bottom:"long", botC:"#3a3f4b", shoes:"shoe", outer:"coat", outC:"#b07d4f",
+  items:[["🧥","ウールコート"],["🧶","ニット"],["👖","長ズボン"],["👞","革靴"]]},
+ {t:"厚手コート＋マフラー", s:"首元と手を温めて", col:"#3d6fc0",
+  top:"knit", topC:"#7a8fa6", sleeve:"long", bottom:"long", botC:"#2d3340", shoes:"shoe", outer:"coat", outC:"#3e4651", scarf:"#c8453c", gloves:"#5a4636",
+  items:[["🧥","厚手のコート"],["🧣","マフラー"],["🧤","手袋"],["🧶","ニット"]]},
+ {t:"ダウンでしっかり防寒", s:"真冬の装備。インナーも暖かいものを", col:"#2f4fa0",
+  top:"knit", topC:"#a05252", sleeve:"long", bottom:"long", botC:"#2d3340", shoes:"boot", outer:"down", outC:"#2f4a7a", scarf:"#e0b341", gloves:"#333a44", beanie:"#c8453c",
+  items:[["🧥","ダウンジャケット"],["🧣","マフラー"],["🧤","手袋"],["🧢","ニット帽"],["🩲","防寒インナー"]]}
+];
+LV.forEach((o,i)=>{ if(o) o.level=i; });
+const GAUGE_COLS = ["#e8553f","#f08a3c","#e0b341","#8bbf5a","#4fb3a5","#4f8fd0","#3d6fc0","#2f4fa0"];
+
+function levelOf(t){
+  if(t>=28) return 1; if(t>=24) return 2; if(t>=20) return 3; if(t>=16) return 4;
+  if(t>=12) return 5; if(t>=8) return 6; if(t>=4) return 7; return 8;
+}
+
+/* ---------- 場所・通信 ---------- */
+function setMsg(t, err){ const m=$("msg"); m.textContent=t||""; m.className="msg"+(err?" err":""); }
+function loading(on){ $("loading").classList.toggle("show", !!on); }
+
+async function reverseName(lat, lon){
+  try{
+    const u = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=14&accept-language=ja`;
+    const r = await fetch(u); if(!r.ok) throw 0;
+    const j = await r.json(); const a = j.address || {};
+    const city = a.city || a.town || a.village || a.county || a.state || "";
+    const sub = a.suburb || a.quarter || a.neighbourhood || a.city_district || "";
+    const n = [city, sub].filter(Boolean).join(" ");
+    return n || j.name || fmtLatLon(lat, lon);
+  }catch(e){ return fmtLatLon(lat, lon); }
+}
+function fmtLatLon(lat, lon){ return `北緯${(+lat).toFixed(3)}° 東経${(+lon).toFixed(3)}°`; }
+
+async function searchPlaces(q){
+  const out = [];
+  try{
+    const u = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&accept-language=ja&limit=8`;
+    const r = await fetch(u);
+    if(r.ok){
+      const j = await r.json();
+      j.forEach(p => out.push({lat:+p.lat, lon:+p.lon, name:(p.name || p.display_name.split(",")[0]).trim(),
+        desc:p.display_name.split(",").slice(1,4).map(s=>s.trim()).reverse().join(" ")}));
+    }
+  }catch(e){}
+  if(!out.length){
+    try{
+      const u = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=8&language=ja&format=json`;
+      const r = await fetch(u);
+      if(r.ok){
+        const j = await r.json();
+        (j.results||[]).forEach(p => out.push({lat:p.latitude, lon:p.longitude, name:p.name,
+          desc:[p.country, p.admin1, p.admin2].filter(Boolean).join(" ")}));
+      }
+    }catch(e){}
+  }
+  return out;
+}
+
+const cache = new Map();
+async function fetchWeather(lat, lon){
+  const key = lat.toFixed(3)+","+lon.toFixed(3);
+  const c = cache.get(key);
+  if(c && Date.now()-c.t < 20*60*1000) return c.d;
+  const daily = "weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,precipitation_probability_max,precipitation_sum,snowfall_sum,uv_index_max,wind_speed_10m_max";
+  const hourly = "temperature_2m,apparent_temperature,weather_code,precipitation_probability";
+  const u = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=${daily}&hourly=${hourly}&timezone=auto&forecast_days=${DAYS}&wind_speed_unit=ms`;
+  const r = await fetch(u);
+  if(!r.ok) throw new Error("天気の取得に失敗しました（"+r.status+"）");
+  const d = await r.json();
+  cache.set(key, {t:Date.now(), d});
+  return d;
+}
+
+async function setLocation(loc, opts={}){
+  state.loc = {lat:+(+loc.lat).toFixed(4), lon:+(+loc.lon).toFixed(4), name:loc.name || fmtLatLon(loc.lat, loc.lon)};
+  if(!opts.keepDay) state.dayIdx = 0;
+  $("locName").textContent = state.loc.name;
+  updateFavBtn(); saveLS();
+  loading(true); setMsg("");
+  try{
+    state.data = await fetchWeather(state.loc.lat, state.loc.lon);
+    renderDays(); renderDay();
+    $("main").hidden = false;
+  }catch(e){
+    setMsg(e.message || "天気を取得できませんでした。通信状況を確認してください。", true);
+  }finally{ loading(false); }
+}
+
+function useGeolocation(silent){
+  return new Promise(resolve=>{
+    if(!navigator.geolocation){ if(!silent) setMsg("この端末では現在地を取得できません。", true); resolve(false); return; }
+    loading(true);
+    navigator.geolocation.getCurrentPosition(async pos=>{
+      const lat = pos.coords.latitude, lon = pos.coords.longitude;
+      const name = await reverseName(lat, lon);
+      loading(false);
+      await setLocation({lat, lon, name: "現在地（"+name+"）"});
+      resolve(true);
+    }, err=>{
+      loading(false);
+      if(!silent) setMsg(err.code===1 ? "現在地の利用が許可されていません。ブラウザの設定で位置情報を許可するか、検索・地図で場所を選んでください。" : "現在地を取得できませんでした。", true);
+      resolve(false);
+    }, {enableHighAccuracy:false, timeout:10000, maximumAge:300000});
+  });
+}
+
+/* ---------- お気に入り ---------- */
+function isFav(){ return state.loc && state.favs.some(f=>Math.abs(f.lat-state.loc.lat)<1e-3 && Math.abs(f.lon-state.loc.lon)<1e-3); }
+function updateFavBtn(){ const b=$("favBtn"); const on=isFav(); b.textContent = on?"★":"☆"; b.title = on?"保存を解除":"この場所を保存"; }
+function renderFavs(){
+  const box = $("favs"); box.innerHTML = "";
+  state.favs.forEach((f,i)=>{
+    const c = document.createElement("span"); c.className="chip";
+    const b = document.createElement("button"); b.className="btn"; b.style.cssText="border:0;padding:0;background:none;font-size:13px";
+    b.textContent = "★ "+f.name; b.onclick = ()=>setLocation(f);
+    const x = document.createElement("button"); x.className="x"; x.textContent="×"; x.setAttribute("aria-label", f.name+"を削除");
+    x.onclick = ()=>{ state.favs.splice(i,1); saveLS(); renderFavs(); updateFavBtn(); };
+    c.append(b,x); box.append(c);
+  });
+}
+$("favBtn").onclick = ()=>{
+  if(!state.loc) return;
+  if(isFav()) state.favs = state.favs.filter(f=>!(Math.abs(f.lat-state.loc.lat)<1e-3 && Math.abs(f.lon-state.loc.lon)<1e-3));
+  else state.favs.unshift({...state.loc, name: state.loc.name.replace(/^現在地（(.*)）$/,"$1")});
+  state.favs = state.favs.slice(0,12); saveLS(); renderFavs(); updateFavBtn();
+};
+
+/* ---------- 日付タブ ---------- */
+const WD = ["日","月","火","水","木","金","土"];
+function dayLabel(iso, i){
+  const d = new Date(iso+"T00:00:00");
+  const md = (d.getMonth()+1)+"/"+d.getDate();
+  const w = WD[d.getDay()];
+  const top = i===0 ? "今日" : i===1 ? "明日" : i===2 ? "あさって" : md;
+  return {top, md, w, dow:d.getDay()};
+}
+function renderDays(){
+  const D = state.data.daily, box = $("days"); box.innerHTML = "";
+  D.time.forEach((t,i)=>{
+    const L = dayLabel(t,i), w = wx(D.weather_code[i]);
+    const b = document.createElement("button");
+    b.className = "day"+(i===state.dayIdx?" on":""); b.setAttribute("role","tab");
+    const wcls = L.dow===6?"sat":L.dow===0?"sun":"";
+    const pp = D.precipitation_probability_max[i];
+    b.innerHTML = `<span class="w ${wcls}">${L.top}${i<3?"":"（"+L.w+"）"}</span>`+
+      (i<3?`<span class="w ${wcls}" style="font-size:11px">${L.md}（${L.w}）</span>`:"")+
+      `<span class="i">${w.i}</span><span class="tt"><span class="mx">${Math.round(D.temperature_2m_max[i])}°</span> / <span class="mn">${Math.round(D.temperature_2m_min[i])}°</span></span>`+
+      `<span class="r">☂ ${pp==null?"—":pp+"%"}</span>`;
+    b.onclick = ()=>{ state.dayIdx=i; document.querySelectorAll(".day").forEach((x,j)=>x.classList.toggle("on", j===i)); renderDay(); };
+    box.append(b);
+  });
+  const on = box.children[state.dayIdx]; if(on) on.scrollIntoView({block:"nearest", inline:"nearest"});
+}
+
+/* ---------- 1日分の表示 ---------- */
+function hourAt(dateIso, h){
+  const H = state.data.hourly; const key = dateIso+"T"+String(h).padStart(2,"0")+":00";
+  const i = H.time.indexOf(key); if(i<0) return null;
+  return {t:H.temperature_2m[i], a:H.apparent_temperature[i], c:H.weather_code[i], p:H.precipitation_probability ? H.precipitation_probability[i] : null};
+}
+
+function renderDay(){
+  const D = state.data.daily, i = state.dayIdx;
+  const date = D.time[i], L = dayLabel(date, i), w = wx(D.weather_code[i]);
+  const tmax = D.temperature_2m_max[i], tmin = D.temperature_2m_min[i];
+  const amax = D.apparent_temperature_max[i], amin = D.apparent_temperature_min[i];
+  const pp = D.precipitation_probability_max[i], psum = D.precipitation_sum[i] || 0;
+  const snow = (D.snowfall_sum && D.snowfall_sum[i]) || 0;
+  const uv = D.uv_index_max[i], wind = D.wind_speed_10m_max[i];
+
+  const T = (tmax + (amax ?? tmax))/2 + state.sens;
+  const lv = levelOf(T); const o = LV[lv];
+
+  $("wxIcon").textContent = w.i;
+  $("dateLbl").textContent = (i<3? L.top+" ":"")+L.md+"（"+L.w+"）";
+  $("wxLbl").textContent = w.l;
+  $("tmax").textContent = "最高 "+Math.round(tmax)+"°";
+  $("tmin").textContent = "最低 "+Math.round(tmin)+"°";
+  $("feel").textContent = (amax!=null && amin!=null) ? "体感 "+Math.round(amin)+"〜"+Math.round(amax)+"°" : "";
+  $("pp").textContent = pp==null ? "—" : pp+"%";
+  $("wind").textContent = wind==null ? "—" : wind.toFixed(1)+"m/s";
+  $("uv").textContent = uv==null ? "—" : uvLabel(uv);
+
+  const tod = [[7,"朝"],[13,"昼"],[19,"夜"]].map(([h,l])=>{
+    const x = hourAt(date,h); if(!x) return `<div>${l}<br>—</div>`;
+    return `<div>${l} ${wx(x.c).i}<br><b>${Math.round(x.t)}°</b></div>`;
+  }).join("");
+  $("tod").innerHTML = tod;
+
+  // 判定
+  const v = $("verdict"); v.style.background = o.col;
+  $("vT").textContent = o.t; $("vS").textContent = o.s;
+  $("gauge").innerHTML = GAUGE_COLS.map((c,j)=>`<i style="background:${c}" class="${j+1===lv?"on":""}"></i>`).join("");
+
+  // アイテム
+  const items = o.items.map(x=>({e:x[0], n:x[1]}));
+  const tips = [];
+  const isSunny = (w.k==="sun"||w.k==="partly");
+  let umbrella = null;
+  if((pp!=null && pp>=50) || psum>=1){ umbrella="long"; items.unshift({e:"☂️", n:"傘"}); tips.push("雨の予報。傘を持って、足元は濡れても平気な靴に。"); }
+  else if(pp!=null && pp>=30){ umbrella="fold"; items.push({e:"🌂", n:"折りたたみ傘", c:1}); tips.push("降水確率"+pp+"%。折りたたみ傘があると安心です。"); }
+  if(snow>0 || w.k==="snow"){ items.push({e:"🥾", n:"滑りにくい靴"}); tips.push("雪の可能性。滑りにくい靴で、時間に余裕をもって。"); }
+  const diff = tmax - tmin;
+  if(diff>=10 && lv<=4){
+    if(lv<=3) items.push({e:"🧥", n:"羽織り", c:1});
+    tips.push("寒暖差が"+Math.round(diff)+"°あります。朝晩用に脱ぎ着しやすい羽織りを。");
+  }else if(diff>=10){
+    tips.push("寒暖差が"+Math.round(diff)+"°。重ね着で調整しやすくすると快適です。");
+  }
+  const sunglasses = uv!=null && uv>=6 && isSunny && lv<=4;
+  if(uv!=null && uv>=6 && lv<=4){ items.push({e:"🕶️", n:"サングラス"}); items.push({e:"🧴", n:"日焼け止め"}); tips.push("紫外線が強めです。日焼け止めとサングラスを。"); }
+  else if(uv!=null && uv>=3 && lv<=3 && isSunny){ items.push({e:"🧴", n:"日焼け止め"}); }
+  if(wind!=null && wind>=10){ tips.push("風が強い日（最大"+wind.toFixed(0)+"m/s）。風を通しにくいアウターがおすすめ。"); }
+  if(lv===1){ tips.push("こまめな水分補給と、涼しい場所での休憩を。"); }
+  if(lv>=7){ tips.push("首・手首・足首の「3つの首」を温めると体感が上がります。"); }
+  if(state.sens!==0) tips.push((state.sens<0?"寒がり":"暑がり")+"設定で判定しています。");
+  if(!tips.length) tips.push("過ごしやすい天気です。");
+  if(i>=7) tips.push("1週間より先の予報は変わりやすいので、前日にもう一度確認を。");
+
+  $("items").innerHTML = items.map(x=>`<div class="item${x.c?" carry":""}"><span class="e">${x.e}</span><span class="n">${x.n}</span></div>`).join("");
+  $("tips").innerHTML = tips.map(t=>`<li>${t}</li>`).join("");
+
+  $("figure").innerHTML = figureSVG(o, {kind:w.k, umbrella, sunglasses, snowy: snow>0||w.k==="snow"});
+  $("dline").textContent = (i<3?L.top+" ":"")+L.md+"（"+L.w+"） "+w.i+" "+Math.round(tmax)+"° / "+Math.round(tmin)+"°";
+  $("itemsTtl").textContent = (i===0?"今日":i===1?"明日":i===2?"あさって":L.md)+"のコーデ";
+  $("dayNote").textContent = i>=7 ? "※8日目以降の予報は目安です" : "";
+}
+function uvLabel(u){ const r=Math.round(u); return r+(u>=8?" 非常に強い":u>=6?" 強い":u>=3?" 中":" 弱"); }
+
+/* ---------- 人物イラスト ---------- */
+function shade(hex, amt){
+  const n = parseInt(hex.slice(1),16);
+  let r=(n>>16)+amt, g=((n>>8)&255)+amt, b=(n&255)+amt;
+  r=Math.max(0,Math.min(255,r)); g=Math.max(0,Math.min(255,g)); b=Math.max(0,Math.min(255,b));
+  return "#"+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
+}
+function figureSVG(o, f){
+  const SK="#f2c9a0", SKD="#e2b388", HAIR="#3b2a20";
+  const sky = {sun:["#bfe3ff","#eaf6ff"], partly:["#cfe3f5","#f1f7fc"], cloud:["#d5dbe3","#eef1f5"], rain:["#a9b8c8","#dfe6ee"], snow:["#d9e4ef","#f6f9fc"]}[f.kind] || ["#dfe8f2","#f5f8fb"];
+  let s = `<svg viewBox="0 0 220 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${o.t}の服装イラスト">
+  <defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${sky[0]}"/><stop offset="1" stop-color="${sky[1]}"/></linearGradient></defs>
+  <rect width="220" height="380" fill="url(#sky)"/>
+  <ellipse cx="110" cy="352" rx="90" ry="16" fill="#000" opacity=".06"/>`;
+  // 天気の背景
+  if(f.kind==="sun"){ s += `<g opacity=".95"><circle cx="186" cy="52" r="20" fill="#f6b73c"/>${[0,45,90,135,180,225,270,315].map(a=>{const r=a*Math.PI/180;return `<line x1="${186+Math.cos(r)*26}" y1="${52+Math.sin(r)*26}" x2="${186+Math.cos(r)*34}" y2="${52+Math.sin(r)*34}" stroke="#f6b73c" stroke-width="4" stroke-linecap="round"/>`}).join("")}</g>`; }
+  if(f.kind==="partly"){ s += `<circle cx="184" cy="48" r="18" fill="#f6b73c"/>`+cloud(170,66,"#fff"); }
+  if(f.kind==="cloud"){ s += cloud(175,56,"#f4f6f9")+cloud(40,40,"#eef1f5"); }
+  if(f.kind==="rain"){ s += cloud(175,52,"#c6d0dc")+cloud(40,38,"#cdd6e0");
+    for(let k=0;k<16;k++){ const x=15+((k*53)%195), y=90+((k*37)%220); s+=`<line x1="${x}" y1="${y}" x2="${x-4}" y2="${y+12}" stroke="#5b86b8" stroke-width="2" stroke-linecap="round" opacity=".55"/>`; } }
+  if(f.kind==="snow"){ s += cloud(175,52,"#e6ebf1");
+    for(let k=0;k<18;k++){ const x=15+((k*53)%195), y=85+((k*41)%230); s+=`<circle cx="${x}" cy="${y}" r="3" fill="#fff" stroke="#c9d6e4"/>`; } }
+
+  const pantsLong = o.bottom==="long";
+  // 脚
+  s += `<rect x="91" y="205" width="16" height="128" rx="8" fill="${SK}"/><rect x="113" y="205" width="16" height="128" rx="8" fill="${SK}"/>`;
+  // ボトム
+  if(pantsLong){
+    s += `<path d="M86 198 H134 L133 330 H113 L110 228 L107 330 H87 Z" fill="${o.botC}"/><line x1="110" y1="206" x2="110" y2="228" stroke="${shade(o.botC,-30)}" stroke-width="1.5"/>`;
+  }else{
+    s += `<path d="M86 198 H134 L136 252 H113 L110 226 L107 252 H84 Z" fill="${o.botC}"/>`;
+  }
+  // 靴
+  if(o.shoes==="sandal"){ s += `<rect x="84" y="331" width="24" height="6" rx="3" fill="#8a5a3c"/><rect x="112" y="331" width="24" height="6" rx="3" fill="#8a5a3c"/><rect x="92" y="324" width="12" height="4" rx="2" fill="#8a5a3c"/><rect x="116" y="324" width="12" height="4" rx="2" fill="#8a5a3c"/>`; }
+  else if(o.shoes==="boot" || f.snowy){ s += `<path d="M88 300 H108 V338 H82 Q82 330 88 328 Z" fill="#5a3e2b"/><path d="M112 300 H132 V328 Q138 330 138 338 H112 Z" fill="#5a3e2b"/><rect x="88" y="300" width="20" height="6" fill="#e8dccb"/><rect x="112" y="300" width="20" height="6" fill="#e8dccb"/>`; }
+  else if(o.shoes==="shoe"){ s += `<path d="M86 326 H108 V340 H80 Q80 330 86 326 Z" fill="#3b2a20"/><path d="M112 326 H134 Q140 330 140 340 H112 Z" fill="#3b2a20"/>`; }
+  else { s += `<path d="M86 325 H108 V341 H80 Q80 330 86 325 Z" fill="#fff" stroke="#9aa7b5"/><path d="M112 325 H134 Q140 330 140 341 H112 Z" fill="#fff" stroke="#9aa7b5"/><rect x="80" y="337" width="28" height="4" fill="#d14b4b"/><rect x="112" y="337" width="28" height="4" fill="#d14b4b"/>`; }
+  // 腕（素肌）
+  s += `<line x1="80" y1="104" x2="66" y2="192" stroke="${SK}" stroke-width="15" stroke-linecap="round"/><line x1="140" y1="104" x2="154" y2="192" stroke="${SK}" stroke-width="15" stroke-linecap="round"/>`;
+  // 首
+  s += `<rect x="103" y="70" width="14" height="26" rx="5" fill="${SKD}"/>`;
+  // トップス
+  const tc = o.topC;
+  s += `<path d="M78 98 Q110 86 142 98 L139 208 Q110 212 81 208 Z" fill="${tc}"/>`;
+  if(o.top==="shirt"){ s += `<path d="M100 92 L110 106 L120 92" fill="none" stroke="${shade(tc,-40)}" stroke-width="2"/><line x1="110" y1="106" x2="110" y2="206" stroke="${shade(tc,-25)}" stroke-width="1.2"/>${[122,142,162,182].map(y=>`<circle cx="113" cy="${y}" r="1.6" fill="${shade(tc,-50)}"/>`).join("")}`; }
+  if(o.top==="knit"){ s += `<path d="M98 91 Q110 100 122 91" fill="none" stroke="${shade(tc,-30)}" stroke-width="5"/>${[120,140,160,180].map(y=>`<path d="M84 ${y} Q110 ${y+4} 136 ${y}" fill="none" stroke="${shade(tc,-18)}" stroke-width="1.2" opacity=".7"/>`).join("")}<rect x="81" y="200" width="58" height="8" rx="3" fill="${shade(tc,-25)}"/>`; }
+  if(o.top==="tee"){ s += `<path d="M99 91 Q110 101 121 91" fill="none" stroke="${shade(tc,-35)}" stroke-width="2.5"/>`; }
+  // 袖
+  if(o.sleeve==="short"){ s += `<line x1="80" y1="102" x2="74" y2="132" stroke="${tc}" stroke-width="20" stroke-linecap="round"/><line x1="140" y1="102" x2="146" y2="132" stroke="${tc}" stroke-width="20" stroke-linecap="round"/>`; }
+  else { s += `<line x1="80" y1="102" x2="67" y2="186" stroke="${tc}" stroke-width="19" stroke-linecap="round"/><line x1="140" y1="102" x2="153" y2="186" stroke="${tc}" stroke-width="19" stroke-linecap="round"/>`; }
+  // アウター
+  if(o.outer){
+    const c = o.outC, cd = shade(c,-30);
+    const slv = w => `<line x1="79" y1="102" x2="66" y2="184" stroke="${c}" stroke-width="${w}" stroke-linecap="round"/><line x1="141" y1="102" x2="154" y2="184" stroke="${c}" stroke-width="${w}" stroke-linecap="round"/>`;
+    if(o.outer==="cardigan"){
+      s += `<path d="M77 98 Q90 92 102 92 L100 212 L79 212 Z" fill="${c}"/><path d="M143 98 Q130 92 118 92 L120 212 L141 212 Z" fill="${c}"/>${slv(21)}
+      ${[120,140,160,180].map(y=>`<circle cx="104" cy="${y}" r="2" fill="${cd}"/>`).join("")}<rect x="79" y="205" width="21" height="7" fill="${cd}" opacity=".5"/><rect x="120" y="205" width="21" height="7" fill="${cd}" opacity=".5"/>`;
+    }else if(o.outer==="jacket"){
+      s += `<path d="M75 98 Q90 90 103 92 L101 222 L77 222 Z" fill="${c}"/><path d="M145 98 Q130 90 117 92 L119 222 L143 222 Z" fill="${c}"/>${slv(22)}
+      <path d="M103 92 L94 120 L101 128" fill="${shade(c,18)}" stroke="${cd}" stroke-width="1"/><path d="M117 92 L126 120 L119 128" fill="${shade(c,18)}" stroke="${cd}" stroke-width="1"/>
+      <rect x="82" y="168" width="14" height="3" rx="1" fill="${cd}"/><rect x="124" y="168" width="14" height="3" rx="1" fill="${cd}"/>`;
+    }else if(o.outer==="coat"){
+      s += `<path d="M74 98 Q110 86 146 98 L151 268 Q110 274 69 268 Z" fill="${c}"/>${slv(23)}
+      <path d="M98 90 L110 116 L122 90" fill="${tc}"/><path d="M96 88 L88 116 L104 110 Z" fill="${shade(c,15)}"/><path d="M124 88 L132 116 L116 110 Z" fill="${shade(c,15)}"/>
+      <line x1="110" y1="116" x2="110" y2="268" stroke="${cd}" stroke-width="1.5"/>${[134,160,186,212].map(y=>`<circle cx="102" cy="${y}" r="2.6" fill="${cd}"/><circle cx="118" cy="${y}" r="2.6" fill="${cd}"/>`).join("")}
+      <rect x="80" y="196" width="15" height="3" rx="1" fill="${cd}"/><rect x="125" y="196" width="15" height="3" rx="1" fill="${cd}"/>`;
+    }else if(o.outer==="down"){
+      s += `<line x1="79" y1="104" x2="64" y2="182" stroke="${c}" stroke-width="27" stroke-linecap="round"/><line x1="141" y1="104" x2="156" y2="182" stroke="${c}" stroke-width="27" stroke-linecap="round"/>
+      ${[128,152].map(y=>`<line x1="${78-(y-104)*0.19}" y1="${y}" x2="${62-(y-104)*0.19+28}" y2="${y+3}" stroke="${cd}" stroke-width="1.4"/><line x1="${142+(y-104)*0.19}" y1="${y}" x2="${158+(y-104)*0.19-28}" y2="${y+3}" stroke="${cd}" stroke-width="1.4"/>`).join("")}
+      <path d="M70 100 Q110 84 150 100 Q156 170 150 236 Q110 246 70 236 Q64 170 70 100 Z" fill="${c}"/>
+      ${[124,150,176,202,226].map(y=>`<path d="M70 ${y} Q110 ${y+8} 150 ${y}" fill="none" stroke="${cd}" stroke-width="1.6"/>`).join("")}
+      <line x1="110" y1="92" x2="110" y2="242" stroke="${shade(c,40)}" stroke-width="2"/><path d="M92 86 Q110 76 128 86 L126 100 Q110 92 94 100 Z" fill="${shade(c,-15)}"/>`;
+    }
+  }
+  // 手・手袋
+  const hc = o.gloves || SK;
+  s += `<circle cx="65" cy="194" r="${o.gloves?9:8}" fill="${hc}"/><circle cx="155" cy="194" r="${o.gloves?9:8}" fill="${hc}"/>`;
+  // 傘（閉じた状態で手に持つ）
+  if(f.umbrella){
+    const len = f.umbrella==="long" ? 1 : 0.55;
+    const y2 = 196 + 140*len;
+    s += `<path d="M155 196 q-7 -2 -7 -9 q0 -5 5 -5" fill="none" stroke="#5a3e2b" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="155" y1="196" x2="${158+6*len}" y2="${y2}" stroke="#5a3e2b" stroke-width="2.5"/>
+    <path d="M156 ${206} Q${172} ${206+70*len} ${158+6*len} ${y2-6} Q${150} ${206+70*len} 156 206 Z" fill="${f.umbrella==="long"?"#2f6fb5":"#e07a5f"}" stroke="${f.umbrella==="long"?"#1f4f86":"#b5543c"}"/>`;
+  }
+  // マフラー
+  if(o.scarf){
+    const sc=o.scarf, sd=shade(sc,-35);
+    s += `<rect x="94" y="80" width="32" height="17" rx="8" fill="${sc}"/><rect x="99" y="92" width="13" height="52" rx="4" fill="${sc}"/>
+    <line x1="94" y1="88" x2="126" y2="88" stroke="${sd}" stroke-width="1.5" opacity=".6"/>${[103,107,111].map(x=>`<line x1="${x}" y1="144" x2="${x}" y2="151" stroke="${sc}" stroke-width="2"/>`).join("")}
+    <line x1="99" y1="110" x2="112" y2="110" stroke="${sd}" stroke-width="2" opacity=".6"/><line x1="99" y1="128" x2="112" y2="128" stroke="${sd}" stroke-width="2" opacity=".6"/>`;
+  }
+  // 頭
+  s += `<circle cx="110" cy="52" r="27" fill="${SK}"/>
+  <path d="M83 54 Q82 22 110 22 Q138 22 137 54 Q134 38 120 34 Q104 42 86 44 Z" fill="${HAIR}"/>
+  <circle cx="100" cy="56" r="2.8" fill="#2b2b2b"/><circle cx="120" cy="56" r="2.8" fill="#2b2b2b"/>
+  <circle cx="94" cy="64" r="4" fill="#f4a3a3" opacity=".55"/><circle cx="126" cy="64" r="4" fill="#f4a3a3" opacity=".55"/>`;
+  s += o.level>=7 ? `<path d="M104 67 Q110 70 116 67" fill="none" stroke="#7a4b3a" stroke-width="2" stroke-linecap="round"/>` : `<path d="M102 65 Q110 72 118 65" fill="none" stroke="#7a4b3a" stroke-width="2" stroke-linecap="round"/>`;
+  // 帽子
+  if(o.beanie){ const b=o.beanie; s += `<path d="M82 46 Q83 14 110 14 Q137 14 138 46 Z" fill="${b}"/><rect x="80" y="40" width="60" height="11" rx="5" fill="${shade(b,-30)}"/><circle cx="110" cy="12" r="7" fill="#f3efe7"/>`; }
+  if(o.hat==="straw"){ s += `<ellipse cx="110" cy="36" rx="46" ry="9" fill="#e7cf8f" stroke="#c9ad66"/><path d="M88 36 Q88 12 110 12 Q132 12 132 36 Z" fill="#e7cf8f" stroke="#c9ad66"/><rect x="88" y="28" width="44" height="6" fill="#d1495b"/>`; }
+  // サングラス
+  if(f.sunglasses){ s += `<rect x="91" y="50" width="16" height="11" rx="4" fill="#1f2a37"/><rect x="113" y="50" width="16" height="11" rx="4" fill="#1f2a37"/><line x1="107" y1="54" x2="113" y2="54" stroke="#1f2a37" stroke-width="2"/>`; }
+  s += `</svg>`;
+  return s;
+}
+function cloud(x,y,c){ return `<g fill="${c}" opacity=".95"><ellipse cx="${x}" cy="${y}" rx="24" ry="13"/><circle cx="${x-12}" cy="${y-6}" r="11"/><circle cx="${x+6}" cy="${y-11}" r="14"/></g>`; }
+
+/* ---------- 検索 ---------- */
+$("searchForm").addEventListener("submit", async e=>{
+  e.preventDefault();
+  const q = $("q").value.trim(); const ul = $("results");
+  if(!q){ ul.classList.remove("show"); return; }
+  loading(true); setMsg("");
+  const list = await searchPlaces(q);
+  loading(false);
+  ul.innerHTML = "";
+  if(!list.length){ ul.classList.remove("show"); setMsg("「"+q+"」は見つかりませんでした。別の言い方（市区町村名・駅名など）で試してください。", true); return; }
+  list.forEach(p=>{
+    const li = document.createElement("li"); const b = document.createElement("button");
+    b.innerHTML = `<span class="n"></span><span class="d"></span>`;
+    b.querySelector(".n").textContent = p.name; b.querySelector(".d").textContent = p.desc || "";
+    b.onclick = ()=>{ ul.classList.remove("show"); $("q").value=""; $("q").blur(); setLocation(p); };
+    li.append(b); ul.append(li);
+  });
+  ul.classList.add("show");
+});
+
+/* ---------- 地図 ---------- */
+let map = null, marker = null, pin = null;
+function openMap(){
+  $("modal").classList.add("show");
+  const c = state.loc || DEFAULT_LOC;
+  if(!window.L){ $("pinName").textContent = "地図を読み込めませんでした。検索をお使いください。"; return; }
+  if(!map){
+    map = L.map("map", {zoomControl:true}).setView([c.lat, c.lon], 11);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19, attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);
+    marker = L.marker([c.lat, c.lon], {draggable:true}).addTo(map);
+    map.on("click", e=>placePin(e.latlng.lat, e.latlng.lng));
+    marker.on("dragend", ()=>{ const p=marker.getLatLng(); placePin(p.lat, p.lng); });
+  }else{
+    map.setView([c.lat, c.lon], Math.max(map.getZoom(), 10)); marker.setLatLng([c.lat, c.lon]);
+  }
+  pin = {lat:c.lat, lon:c.lon, name:c.name};
+  $("pinName").textContent = "📍 "+c.name;
+  setTimeout(()=>map.invalidateSize(), 60);
+}
+let revTimer = null;
+function placePin(lat, lon){
+  marker.setLatLng([lat, lon]);
+  pin = {lat, lon, name:null};
+  $("pinName").textContent = "📍 場所を確認中…";
+  clearTimeout(revTimer);
+  revTimer = setTimeout(async ()=>{ const n = await reverseName(lat, lon); if(pin && pin.lat===lat && pin.lon===lon){ pin.name=n; $("pinName").textContent = "📍 "+n; } }, 350);
+}
+$("mapBtn").onclick = openMap;
+$("mClose").onclick = ()=>$("modal").classList.remove("show");
+$("mOk").onclick = async ()=>{
+  if(!pin) return;
+  if(!pin.name) pin.name = await reverseName(pin.lat, pin.lon);
+  $("modal").classList.remove("show");
+  setLocation(pin);
+};
+$("mGeo").onclick = ()=>{
+  if(!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(p=>{ map.setView([p.coords.latitude, p.coords.longitude], 13); placePin(p.coords.latitude, p.coords.longitude); },
+    ()=>{ $("pinName").textContent = "現在地を取得できませんでした（位置情報の許可を確認してください）"; }, {timeout:10000});
+};
+document.addEventListener("keydown", e=>{ if(e.key==="Escape") $("modal").classList.remove("show"); });
+
+/* ---------- 体質 ---------- */
+document.querySelectorAll(".sens button").forEach(b=>{
+  b.onclick = ()=>{
+    state.sens = +b.dataset.s; saveLS();
+    document.querySelectorAll(".sens button").forEach(x=>x.classList.toggle("on", x===b));
+    if(state.data) renderDay();
+  };
+});
+$("geoBtn").onclick = ()=>useGeolocation(false);
+
+/* ---------- 起動 ---------- */
+(async function init(){
+  loadLS();
+  document.querySelectorAll(".sens button").forEach(x=>x.classList.toggle("on", +x.dataset.s===state.sens));
+  renderFavs();
+  if(state.loc){ setLocation(state.loc); return; }
+  const ok = await useGeolocation(true);
+  if(!ok){ await setLocation(DEFAULT_LOC); setMsg("現在地が使えないため名古屋駅を表示しています。検索・地図・現在地ボタンで場所を変えられます。"); }
+})();
+</script>
+</body>
+</html>
